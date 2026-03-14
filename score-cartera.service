@@ -1,0 +1,13 @@
+[Unit]
+Description=Score de Riesgo de Cartera (FastAPI - puerto 8099)
+After=network.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/var/www/score-cartera
+ExecStart=/var/www/chatbot/venv/bin/uvicorn api:app --host 127.0.0.1 --port 8099
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
