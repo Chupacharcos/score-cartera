@@ -73,8 +73,14 @@ def _synthetic_returns(tickers: list[str], n_days: int = 252) -> pd.DataFrame:
     daily_vols = np.array(vols) / np.sqrt(252)
     daily_means = np.array([0.0008] * n)  # ~20% annualised drift
     returns = daily_means + correlated * daily_vols
-    dates = pd.date_range(end=datetime.today(), periods=n_days, freq="B")
-    return pd.DataFrame(returns, index=dates, columns=tickers)
+    actual_n = returns.shape[0]
+    # Use calendar days to avoid weekend count mismatch; pick business-day-like spacing
+    end = datetime.today()
+    # Generate enough calendar days and filter to have `actual_n` entries
+    cal_dates = pd.bdate_range(end=end, periods=actual_n + 10)[-actual_n:]
+    if len(cal_dates) != actual_n:
+        cal_dates = pd.date_range(end=end, periods=actual_n)
+    return pd.DataFrame(returns, index=cal_dates, columns=tickers)
 
 
 def fetch_returns(tickers: list[str], period_days: int = 252) -> pd.DataFrame:
