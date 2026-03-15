@@ -1,10 +1,12 @@
 """
 Portfolio risk scoring engine.
-Architecture: Rolling correlation + volatility → Graph Attention weights → Risk Score
+Architecture: GaussianHMM (Bull/Neutral/Bear) + Rolling correlation + Risk Score
 Data source: yfinance (falls back to synthetic if unavailable)
 """
 import numpy as np
 import pandas as pd
+import joblib
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -13,6 +15,31 @@ try:
     YFINANCE_AVAILABLE = True
 except ImportError:
     YFINANCE_AVAILABLE = False
+
+# ─── HMM lazy loader ─────────────────────────────────────────────────────────
+_ARTIFACTS = Path(__file__).parent / "artifacts"
+_hmm_model   = None
+_hmm_scaler  = None
+_hmm_regime_map = None
+_hmm_lock    = None
+
+def _load_hmm():
+    global _hmm_model, _hmm_scaler, _hmm_regime_map, _hmm_lock
+    import threading
+    if _hmm_lock is None:
+        _hmm_lock = threading.Lock()
+    if _hmm_model is None:
+        with _hmm_lock:
+            if _hmm_model is None:
+                try:
+                    _hmm_model  = joblib.load(_ARTIFACTS / "hmm_model.joblib")
+                    _hmm_scaler = joblib.load(_ARTIFACTS / "scaler.joblib")
+                    import json
+                    regime_raw = json.loads((_ARTIFACTS / "regime_map.json").read_text())
+                    _hmm_regime_map = {int(k): v for k, v in regime_raw.items()}
+                except Exception:
+                    pass
+    return _hmm_model, _hmm_scaler, _hmm_regime_map
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -137,18 +164,48 @@ def rolling_avg_correlation(returns: pd.DataFrame, window: int = 30) -> pd.Serie
     return series.dropna()
 
 
+def detect_regime_hmm(returns_series: pd.Series) -> dict:
+    """
+    Regime detection via GaussianHMM (Bull/Neutral/Bear).
+    Uses same features as training: return, vol_20d, mom_5d, mom_20d.
+    Falls back to correlation-spike heuristic if HMM not available.
+    """
+    model, scaler, regime_map = _load_hmm()
+    ret = returns_series.values
+    n = len(ret)
+
+    if model is not None and n >= 25:
+        vol20 = np.array([
+            ret[max(0, t-20):t+1].std() if t >= 5 else ret[:t+1].std()
+            for t in range(n)
+        ])
+        mom5  = np.array([ret[max(0, t-4):t+1].sum()  if t >= 4  else ret[:t+1].sum() for t in range(n)])
+        mom20 = np.array([ret[max(0, t-19):t+1].sum() if t >= 19 else ret[:t+1].sum() for t in range(n)])
+        X = np.column_stack([ret, vol20, mom5, mom20]).astype(np.float32)
+        X_s = scaler.transform(X)
+        states = model.predict(X_s)
+        current_regime = regime_map.get(int(states[-1]), "Neutral")
+        # Recent dominance (last 20 days)
+        recent_regimes = [regime_map.get(int(s), "Neutral") for s in states[-20:]]
+        bear_pct = recent_regimes.count("Bear") / len(recent_regimes)
+
+        label_map = {"Bear": ("Bear", "red", 80), "Neutral": ("Neutral", "orange", 45), "Bull": ("Bull", "green", 15)}
+        label, color, base_score = label_map.get(current_regime, ("Neutral", "orange", 45))
+        # Boost score if recent bear dominance
+        score = min(100, int(base_score + bear_pct * 30))
+        return {"label": label, "color": color, "score": score,
+                "hmm": True, "bear_pct_20d": round(bear_pct * 100, 1)}
+
+    # Fallback: correlation-spike heuristic
+    return {"label": "Normal", "color": "green", "score": 20, "hmm": False}
+
+
 def detect_regime(avg_corr_series: pd.Series) -> dict:
-    """
-    Regime detection via correlation spike.
-    Crisis: avg correlation > 0.65 (assets moving together = diversification fails)
-    Stress: 0.45–0.65
-    Normal: < 0.45
-    """
+    """Legacy heuristic — kept for compatibility. Prefer detect_regime_hmm."""
     if len(avg_corr_series) == 0:
         return {"label": "Normal", "color": "green", "score": 20}
     current = float(avg_corr_series.iloc[-1])
     historical_75th = float(avg_corr_series.quantile(0.75))
-
     if current > 0.65 or (current > historical_75th * 1.3 and current > 0.5):
         return {"label": "Crisis", "color": "red", "score": 85, "corr": round(current, 3)}
     elif current > 0.45:
@@ -219,13 +276,26 @@ def analyse_portfolio(portfolio: list[dict]) -> dict:
     corr = correlation_matrix(returns)
     port_vol = portfolio_volatility(returns, weights)
     avg_corr = rolling_avg_correlation(returns, window=30)
-    regime = detect_regime(avg_corr)
+    port_ret_series = (returns * weights).sum(axis=1)
+    # HMM regime detection on portfolio returns
+    regime = detect_regime_hmm(port_ret_series)
     hhi = float(np.sum(weights ** 2))  # Herfindahl-Hirschman Index
     risk_score = compute_risk_score(port_vol, regime, hhi)
     pairs = top_correlated_pairs(corr)
 
+    # ── Risk metrics: VaR, CVaR, Sharpe, Sortino ─────────────────────────────
+    ann = np.sqrt(252)
+    pr = port_ret_series.values
+    var_95  = float(np.percentile(pr, 5))
+    cvar_95 = float(pr[pr <= var_95].mean()) if (pr <= var_95).any() else var_95
+    sharpe  = float(ann * pr.mean() / (pr.std() + 1e-9))
+    downside = pr[pr < 0].std() + 1e-9
+    sortino = float(ann * pr.mean() / downside)
+    cum = np.cumprod(1 + pr)
+    peak = np.maximum.accumulate(cum)
+    max_dd = float(((cum - peak) / peak).min())
+
     # Time series for chart (rolling 30-day portfolio vol, annualised)
-    port_ret_series = (returns * weights).sum(axis=1)
     rolling_vol = port_ret_series.rolling(30).std() * np.sqrt(252)
     chart_dates = rolling_vol.dropna().index.strftime("%Y-%m-%d").tolist()
     chart_vols = [round(v * 100, 2) for v in rolling_vol.dropna().tolist()]
@@ -252,6 +322,13 @@ def analyse_portfolio(portfolio: list[dict]) -> dict:
         "portfolio_volatility": round(port_vol * 100, 2),
         "regime": regime,
         "hhi": round(hhi, 4),
+        "risk_metrics": {
+            "sharpe":       round(sharpe, 3),
+            "sortino":      round(sortino, 3),
+            "var_95":       round(var_95 * 100, 3),
+            "cvar_95":      round(cvar_95 * 100, 3),
+            "max_drawdown": round(max_dd * 100, 2),
+        },
         "top_correlations": pairs,
         "assets": asset_metrics,
         "chart": {
