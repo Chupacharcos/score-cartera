@@ -4,7 +4,7 @@ from router import router
 
 app = FastAPI(
     title="Score de Riesgo de Cartera",
-    description="Real-time portfolio risk scoring with TFT-lite + Graph Attention correlations.",
+    description="Real-time portfolio risk scoring with a trained GaussianHMM (3 market regimes) + dynamic asset correlations.",
     version="1.0.0",
 )
 
