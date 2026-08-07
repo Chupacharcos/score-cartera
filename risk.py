@@ -251,9 +251,20 @@ def analyse_portfolio(portfolio: list[dict]) -> dict:
     Returns full risk analysis.
     """
     # Normalise weights
+    # Los tickers fuera del catálogo se descartaban en silencio: quien enviaba
+    # una cartera con un valor no soportado recibía el análisis de OTRA cartera
+    # sin enterarse. Ahora se devuelven en `ignored` y, si eso cambia el peso
+    # analizado de forma relevante, se avisa.
     tickers = [p["ticker"] for p in portfolio if p["ticker"] in ASSET_CATALOGUE]
+    ignored = [p["ticker"] for p in portfolio if p["ticker"] not in ASSET_CATALOGUE]
     if not tickers:
-        return {"error": "No valid tickers"}
+        return {
+            "error": (
+                "Ninguno de los tickers enviados está soportado. "
+                f"Admitidos: {', '.join(sorted(ASSET_CATALOGUE))}"
+            ),
+            "ignored": ignored,
+        }
     raw_weights = np.array([p["weight"] for p in portfolio if p["ticker"] in ASSET_CATALOGUE],
                            dtype=float)
     if raw_weights.sum() <= 0:
@@ -319,6 +330,13 @@ def analyse_portfolio(portfolio: list[dict]) -> dict:
 
     return {
         "risk_score": risk_score,
+        # Qué se dejó fuera del análisis y por qué, para que el resultado no se
+        # lea como si cubriera toda la cartera enviada.
+        "ignored": ignored,
+        "ignored_note": (
+            f"{len(ignored)} activo(s) no soportado(s) quedaron fuera del análisis: "
+            f"{', '.join(ignored)}"
+        ) if ignored else None,
         "portfolio_volatility": round(port_vol * 100, 2),
         "regime": regime,
         "hhi": round(hhi, 4),
