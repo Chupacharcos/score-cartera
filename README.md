@@ -6,6 +6,34 @@ Demo en producción: [adrianmoreno-dev.com/demo/score-riesgo-cartera](https://ad
 
 ---
 
+<!-- LOOP-MAP:START (generado por `php artisan project:loop readme` — no editar a mano) -->
+
+## El bucle que cierra
+
+<p align="center"><img src="https://adrianmoreno-dev.com/bucle/score-riesgo-cartera.svg" alt="Mapa del bucle de Score de Riesgo de Cartera en Tiempo Real" width="900"></p>
+
+**Para** quien lleva su propia cartera de inversión · **Cada semana**
+
+| Etapa | Qué pasa | Quién |
+|---|---|---|
+| **1. Disparador** | Quiero saber si mi cartera aguantaría un cambio de régimen del mercado. | persona |
+| **2. Acción** | Clasifica el mercado en uno de tres regímenes con un HMM gaussiano y recalcula correlaciones y métricas de riesgo. | software |
+| **3. Medición** | El régimen detectado, el VaR y el CVaR, y el peor drawdown que ha tenido la cartera. | software |
+| **4. Decisión** | Decido si reduzco posiciones, si cubro o si la dejo como está. | persona |
+
+### Lo que no hace
+
+- No recomienda comprar ni vender: mide riesgo, no da señales de entrada.
+- No predice el precio: clasifica el régimen y cuantifica la exposición.
+- Tres regímenes y no más: alcista, neutral y bajista.
+
+### Por qué está construido así
+
+- **HMM gaussiano de tres regímenes** en vez de una regla sobre la volatilidad — Una regla de volatilidad reacciona cuando el movimiento ya pasó. El HMM asigna probabilidad de régimen con la serie entera.
+- **CVaR además del VaR** en vez de quedarse en el VaR — El VaR dice dónde está el corte; el CVaR dice cuánto se pierde de media cuando el mercado se pasa de ese corte.
+
+<!-- LOOP-MAP:END -->
+
 ## Resultados del Modelo (Backtest 5 años)
 
 | Métrica | HMM Strategy | Buy & Hold |
