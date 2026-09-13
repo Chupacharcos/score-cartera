@@ -121,8 +121,8 @@ Para cada cartera analizada se calculan sobre datos reales de Yahoo Finance:
 score-cartera/
 ├── train.py          # Entrenamiento GaussianHMM + backtest (ejecutar offline)
 ├── risk.py           # Motor de análisis: HMM, VaR/CVaR/Sharpe, correlaciones
-├── router.py         # Endpoints FastAPI (/ml/cartera/*)
-├── api.py            # App FastAPI standalone (puerto 8096)
+├── router.py         # Endpoints FastAPI (/cartera/*)
+├── api.py            # App FastAPI standalone (puerto 8099)
 └── artifacts/        # Modelo entrenado (excluido de git)
     ├── hmm_model.joblib
     ├── scaler.joblib
@@ -135,13 +135,18 @@ score-cartera/
 
 ## Endpoints REST
 
+El servicio expone **4 rutas**. El prefijo real es `/cartera`, no `/ml/cartera`
+(`api.py` monta el router con `prefix="/cartera"`), y `/health` cuelga además de
+la raíz de la app para que los monitores no dependan del router.
+
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `POST` | `/ml/cartera/analyse` | Análisis completo de la cartera |
-| `GET` | `/ml/cartera/assets` | Lista de activos disponibles |
-| `GET` | `/ml/cartera/health` | Estado del servicio |
+| `POST` | `/cartera/analyse` | Análisis completo de la cartera |
+| `GET` | `/cartera/assets` | Lista de activos disponibles |
+| `GET` | `/cartera/health` | Estado del servicio |
+| `GET` | `/health` | Estado del servicio (raíz, para monitorización) |
 
-### `POST /ml/cartera/analyse`
+### `POST /cartera/analyse`
 
 **Body:**
 ```json
