@@ -135,7 +135,7 @@ score-cartera/
 
 ## Endpoints REST
 
-El servicio expone **4 rutas**. El prefijo real es `/cartera`, no `/ml/cartera`
+El servicio expone **5 rutas**. El prefijo real es `/cartera`, no `/ml/cartera`
 (`api.py` monta el router con `prefix="/cartera"`), y `/health` cuelga además de
 la raíz de la app para que los monitores no dependan del router.
 
@@ -143,8 +143,14 @@ la raíz de la app para que los monitores no dependan del router.
 |--------|------|-------------|
 | `POST` | `/cartera/analyse` | Análisis completo de la cartera |
 | `GET` | `/cartera/assets` | Lista de activos disponibles |
+| `GET` | `/cartera/model/metrics` | Resumen del catálogo: nº de activos y clases |
 | `GET` | `/cartera/health` | Estado del servicio |
 | `GET` | `/health` | Estado del servicio (raíz, para monitorización) |
+
+La ruta de métricas lleva DOS prefijos: `model_metrics.py` se monta en
+`router.py` con `prefix="/model"` y ese router va a su vez bajo `/cartera`. Se
+anota porque el agente que la creó la buscó en `/metrics`, recibió un 404 y aun
+así dio la mejora por buena: la ruta funciona, la comprobación no.
 
 ### `POST /cartera/analyse`
 
