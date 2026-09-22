@@ -4,6 +4,8 @@ from typing import Optional
 from risk import analyse_portfolio, ASSET_CATALOGUE
 
 router = APIRouter()
+from model_metrics import router as metrics_router
+router.include_router(metrics_router, prefix="/model")
 
 
 class AssetWeight(BaseModel):
